@@ -1,0 +1,89 @@
+name: Package and publish
+
+# Every push to main republishes the downloadable plugin. The version in
+# sendway.php names the release: bump it for a new release, or push again to
+# refresh the assets on the existing one.
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.2'
+
+      # A syntax error here is a white screen on a merchant's live site, so it
+      # must fail the build rather than ship.
+      - name: Lint
+        run: |
+          for f in sendway.php includes/*.php; do
+            php -l "$f"
+          done
+
+      - name: Read version
+        id: v
+        run: |
+          VERSION=$(grep -m1 "^ \* Version:" sendway.php | sed 's/.*Version: *//' | tr -d ' \r')
+          if [ -z "$VERSION" ]; then echo "No Version header in sendway.php"; exit 1; fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "Version $VERSION"
+
+      - name: Build
+        run: |
+          chmod +x build.sh
+          ./build.sh
+          mkdir -p out
+          cp dist/sendway-woocommerce.zip out/
+          cat > out/sendway-woocommerce.json <<JSON
+          {
+            "name": "SendWay for WooCommerce",
+            "slug": "sendway-woocommerce",
+            "version": "${{ steps.v.outputs.version }}",
+            "requires": "6.0",
+            "requires_php": "7.4",
+            "tested": "6.7",
+            "download_url": "https://sendway.co.ke/sendway-woocommerce.zip",
+            "homepage": "https://sendway.co.ke/docs/woocommerce",
+            "last_updated": "$(date -u +%Y-%m-%d)"
+          }
+          JSON
+
+      - name: Verify the archive installs the way WordPress expects
+        run: |
+          # A zip without a single top-level folder scatters files across
+          # wp-content/plugins and the install looks corrupt.
+          unzip -tq out/sendway-woocommerce.zip
+          TOP=$(unzip -Z1 out/sendway-woocommerce.zip | cut -d/ -f1 | sort -u)
+          test "$TOP" = "sendway-woocommerce" || { echo "Unexpected top level: $TOP"; exit 1; }
+          unzip -p out/sendway-woocommerce.zip sendway-woocommerce/sendway.php | grep -q "Plugin Name:"
+          echo "Archive OK"
+
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.v.outputs.version }}
+        run: |
+          TAG="v$VERSION"
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            # Same version pushed again — refresh the assets in place so the
+            # download always matches main.
+            gh release upload "$TAG" out/* --clobber
+            echo "Updated $TAG"
+          else
+            gh release create "$TAG" out/* \
+              --title "SendWay for WooCommerce $VERSION" \
+              --notes "Download **sendway-woocommerce.zip** and upload it in WordPress under Plugins → Add New → Upload Plugin.
+
+            Setup: https://sendway.co.ke/docs/woocommerce"
+            echo "Created $TAG"
+          fi
