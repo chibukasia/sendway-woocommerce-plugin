@@ -3,7 +3,7 @@
  * Plugin Name:       SendWay for WooCommerce
  * Plugin URI:        https://sendway.co.ke
  * Description:       Live SendWay delivery rates at checkout, a pickup-town picker for your customers, automatic parcel booking, and tracking on the order — for shops delivering out of Nairobi.
- * Version:           1.0.0
+ * Version:           1.1.0
  * Requires at least: 6.0
  * Requires PHP:      7.4
  * Author:            Fecn Technologies Ltd
@@ -22,7 +22,7 @@
 
 defined( 'ABSPATH' ) || exit;
 
-define( 'SENDWAY_VERSION', '1.0.0' );
+define( 'SENDWAY_VERSION', '1.1.0' );
 define( 'SENDWAY_PATH', plugin_dir_path( __FILE__ ) );
 define( 'SENDWAY_URL', plugin_dir_url( __FILE__ ) );
 
@@ -32,6 +32,8 @@ require_once SENDWAY_PATH . 'includes/class-sendway-checkout.php';
 require_once SENDWAY_PATH . 'includes/class-sendway-booking.php';
 require_once SENDWAY_PATH . 'includes/class-sendway-webhooks.php';
 require_once SENDWAY_PATH . 'includes/class-sendway-orders.php';
+require_once SENDWAY_PATH . 'includes/class-sendway-updater.php';
+require_once SENDWAY_PATH . 'includes/class-sendway-address.php';
 
 /**
  * WooCommerce is a hard dependency: without it there is no checkout to attach
@@ -52,6 +54,10 @@ function sendway_requires_woocommerce() {
 	return false;
 }
 
+// Updates are independent of WooCommerce: a merchant who has deactivated Woo
+// should still be offered the new version rather than being stranded.
+add_action( 'init', array( 'SendWay_Updater', 'init' ) );
+
 add_action(
 	'plugins_loaded',
 	function () {
@@ -64,6 +70,7 @@ add_action(
 		SendWay_Booking::init();
 		SendWay_Webhooks::init();
 		SendWay_Orders::init();
+		SendWay_Address::init();
 
 		// The shipping method class extends WC_Shipping_Method, which only
 		// exists once WooCommerce has loaded — hence the late require.

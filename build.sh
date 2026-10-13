@@ -25,6 +25,10 @@ else
   echo "WARNING: php not found, packaging without a syntax check."
 fi
 
+# The updater shows this in the "View details" panel, so it travels with the
+# manifest rather than living only in the git log.
+CHANGELOG=$(sed -n '/^== Changelog ==/,$p' "$ROOT/readme.txt" | sed '1d' | sed 's/"/\\"/g' | awk 'BEGIN{ORS="<br>"} {print}')
+
 rm -rf "$ROOT/.build" "$ROOT/dist"
 mkdir -p "$STAGE/includes" "$ROOT/dist"
 
@@ -51,7 +55,9 @@ if [ -n "$1" ]; then
   "tested": "6.7",
   "download_url": "https://sendway.co.ke/$SLUG.zip",
   "homepage": "https://sendway.co.ke/docs/woocommerce",
-  "last_updated": "$(date -u +%Y-%m-%d)"
+  "last_updated": "$(date -u +%Y-%m-%d)",
+  "description": "Live SendWay delivery rates at checkout, a pickup-point picker for your customers, automatic parcel booking and tracking on the order.",
+  "changelog": "$CHANGELOG"
 }
 JSON
   echo "Copied to $1 with $SLUG.json"

@@ -132,6 +132,37 @@ class SendWay_API {
 		return self::request( 'POST', '/parcels', $args );
 	}
 
+	/**
+	 * Address lookup runs on SendWay's Google key, so a shop needs no Maps
+	 * account of its own. `session_token` groups one search with the resolve
+	 * that follows so the pair bills as a single session.
+	 */
+	public static function search_addresses( $query, $session_token = '' ) {
+		return self::request(
+			'POST',
+			'/addresses/search',
+			array_filter(
+				array(
+					'query'         => $query,
+					'session_token' => $session_token,
+				)
+			)
+		);
+	}
+
+	public static function resolve_address( $place_id, $session_token = '' ) {
+		return self::request(
+			'POST',
+			'/addresses/resolve',
+			array_filter(
+				array(
+					'place_id'      => $place_id,
+					'session_token' => $session_token,
+				)
+			)
+		);
+	}
+
 	public static function current_run() {
 		return self::request( 'GET', '/pickup-runs/current' );
 	}

@@ -102,7 +102,7 @@ class SendWay_Settings {
 				'title'    => __( 'Collection address', 'sendway' ),
 				'id'       => 'sendway_origin_address',
 				'type'     => 'text',
-				'desc_tip' => __( 'Where a rider comes to collect — your shop or warehouse in Nairobi.', 'sendway' ),
+				'desc_tip' => __( 'Start typing and pick your address — we look it up for you, no Google account needed.', 'sendway' ),
 				'css'      => 'width:400px',
 			),
 			array(
@@ -110,14 +110,14 @@ class SendWay_Settings {
 				'id'       => 'sendway_origin_lat',
 				'type'     => 'text',
 				'default'  => '-1.2864',
-				'desc_tip' => __( 'Right-click your shop in Google Maps and copy the first number.', 'sendway' ),
+				'desc_tip' => __( 'Filled in automatically when you pick your address above.', 'sendway' ),
 			),
 			array(
 				'title'    => __( 'Collection longitude', 'sendway' ),
 				'id'       => 'sendway_origin_lng',
 				'type'     => 'text',
 				'default'  => '36.8172',
-				'desc_tip' => __( 'The second number from the same Google Maps click.', 'sendway' ),
+				'desc_tip' => __( 'Filled in automatically when you pick your address above.', 'sendway' ),
 			),
 			array(
 				'title'    => __( 'Book the parcel when an order is', 'sendway' ),

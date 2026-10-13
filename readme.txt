@@ -4,7 +4,7 @@ Tags: woocommerce, shipping, delivery, kenya, courier
 Requires at least: 6.0
 Tested up to: 6.7
 Requires PHP: 7.4
-Stable tag: 1.0.0
+Stable tag: 1.1.0
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -88,6 +88,12 @@ press of the manual action replays the first result instead of creating another
 parcel.
 
 == Changelog ==
+
+= 1.1.0 =
+* Address search in settings — type your collection address and pick it. No Google Maps account needed; the lookup runs on SendWay's key.
+* The collection address is now checked against our service area as you pick it, so you find out immediately if a rider cannot reach you.
+* Pickup-point picker at checkout is now a searchable modal instead of a long dropdown.
+* The plugin now updates itself from new releases.
 
 = 1.0.0 =
 * First release: live rates, pickup-town picker, automatic booking, signed webhooks, and tracking on the order, in the account and in emails.
