@@ -4,7 +4,7 @@ Tags: woocommerce, shipping, delivery, kenya, courier
 Requires at least: 6.0
 Tested up to: 6.7
 Requires PHP: 7.4
-Stable tag: 1.1.0
+Stable tag: 1.2.0
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -88,6 +88,12 @@ press of the manual action replays the first result instead of creating another
 parcel.
 
 == Changelog ==
+
+= 1.2.0 =
+* Fragile and large items. Tick "SendWay: fragile" on glassware and screens, or pick a large item (fridge, TV, sofa, mattress) on the product's Shipping tab. Large items are priced per item instead of by weight.
+* The rate at checkout now includes cover for the order value, so it matches what the booking costs.
+* Items SendWay prices by hand, such as big sofas or very valuable orders, no longer show a SendWay rate at checkout. The order note says why and who to call.
+* Requires SendWay API from 24 October 2026.
 
 = 1.1.0 =
 * Address search in settings — type your collection address and pick it. No Google Maps account needed; the lookup runs on SendWay's key.
