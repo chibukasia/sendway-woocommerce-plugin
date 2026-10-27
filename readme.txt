@@ -4,11 +4,11 @@ Tags: woocommerce, shipping, delivery, kenya, courier
 Requires at least: 6.0
 Tested up to: 6.7
 Requires PHP: 7.4
-Stable tag: 1.2.0
+Stable tag: 1.3.0
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
-Deliver anywhere in Kenya from your Nairobi shop. Live rates at checkout, a pickup-town picker for your customers, and parcels booked for you.
+Deliver anywhere in Kenya from your Nairobi shop. Live rates at checkout, a pickup-town picker or door delivery in Nairobi for your customers, and parcels booked for you.
 
 == Description ==
 
@@ -88,6 +88,17 @@ press of the manual action replays the first result instead of creating another
 parcel.
 
 == Changelog ==
+
+= 1.3.0 =
+* Door delivery in Nairobi. Customers choose "Collect in my town" or "Deliver to my door", search their address, and we check a rider can reach it before showing the rate.
+* Bulk goods. Set "SendWay: bulk unit" (sack, carton or jerrycan) on a product, and orders of two or more units travel as a bulk load with volume discounts.
+* Items SendWay prices by hand, such as large sofas, can now be quoted. Turn on "Items SendWay prices by hand" to offer SendWay at checkout as "price confirmed after you order". The plugin asks SendWay for a price when the order comes in, the price arrives as an order note, and you accept it from Order actions.
+* New "Directions for the rider" setting under your collection address. Add a floor, shop number or landmark and it travels with every parcel, so riders find you faster.
+* New "Phone for pickups" setting. The rider calls this number when collecting, and parcels are now booked under your shop's name.
+* Cash-on-delivery orders: SendWay collects the order total from your customer and credits your SendWay wallet, less a 1.5% handling fee. You can switch this off under "Cash on delivery".
+* When SendWay moves collection to another point in the same town, the order gets a note with the new point.
+* Product dimensions now count. A light but bulky order is priced on its size, so the rate at checkout matches what is collected.
+* Requires SendWay API from 27 October 2026.
 
 = 1.2.0 =
 * Fragile and large items. Tick "SendWay: fragile" on glassware and screens, or pick a large item (fridge, TV, sofa, mattress) on the product's Shipping tab. Large items are priced per item instead of by weight.

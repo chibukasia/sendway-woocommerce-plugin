@@ -90,6 +90,11 @@ class SendWay_Webhooks {
 
 	/** Find the order this event belongs to and move it along. */
 	private static function apply( $event ) {
+		if ( 0 === strpos( (string) $event['type'], 'quote_request.' ) ) {
+			self::apply_quote_event( $event );
+			return;
+		}
+
 		$parcel = isset( $event['data']['parcel'] ) ? $event['data']['parcel'] : null;
 		if ( ! $parcel || empty( $parcel['tracking_number'] ) ) {
 			return;
@@ -124,8 +129,24 @@ class SendWay_Webhooks {
 				);
 				break;
 
+			case 'parcel.station_changed':
+				$station = isset( $event['data']['station'] ) ? $event['data']['station'] : array();
+				$order->add_order_note(
+					sprintf(
+						/* translators: 1: pickup point name, 2: town */
+						__( 'SendWay: collection moved to %1$s, %2$s. The customer has been told by SMS and email.', 'sendway' ),
+						isset( $station['name'] ) ? $station['name'] : '?',
+						isset( $station['town'] ) ? $station['town'] : $order->get_meta( '_sendway_town_name' )
+					)
+				);
+				break;
+
 			case 'parcel.delivered':
-				$order->add_order_note( __( 'SendWay: parcel collected by the customer.', 'sendway' ) );
+				$order->add_order_note(
+					'DOOR' === $order->get_meta( '_sendway_delivery_mode' )
+						? __( 'SendWay: parcel delivered to the customer.', 'sendway' )
+						: __( 'SendWay: parcel collected by the customer.', 'sendway' )
+				);
 				if ( $order->has_status( array( 'processing', 'on-hold' ) ) ) {
 					$order->update_status( 'completed', __( 'Delivered by SendWay.', 'sendway' ) );
 				}
@@ -153,6 +174,47 @@ class SendWay_Webhooks {
 				break;
 		}
 
+		$order->save();
+	}
+
+	private static function apply_quote_event( $event ) {
+		$quote = isset( $event['data']['quote_request'] ) ? $event['data']['quote_request'] : null;
+		if ( ! $quote || empty( $quote['id'] ) ) {
+			return;
+		}
+		$orders = wc_get_orders(
+			array(
+				'limit'      => 1,
+				'meta_key'   => '_sendway_quote_id', // phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_meta_key
+				'meta_value' => $quote['id'], // phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_meta_value
+			)
+		);
+		if ( empty( $orders ) ) {
+			return;
+		}
+		$order = $orders[0];
+		SendWay_Booking::apply_quote( $order, $quote );
+
+		if ( 'quote_request.quoted' === $event['type'] ) {
+			$expires = isset( $quote['expires_at'] ) ? strtotime( $quote['expires_at'] ) : false;
+			$order->add_order_note(
+				sprintf(
+					/* translators: 1: total in KES, 2: when the price lapses, 3: note from SendWay */
+					__( 'SendWay quote ready: KES %1$s, held until %2$s.%3$s Accept it from Order actions to book the parcel.', 'sendway' ),
+					isset( $quote['total'] ) ? number_format_i18n( (float) $quote['total'] ) : '?',
+					$expires ? wp_date( get_option( 'date_format' ) . ' ' . get_option( 'time_format' ), $expires ) : '?',
+					! empty( $quote['note'] ) ? ' ' . $quote['note'] . ' ' : ' '
+				)
+			);
+		} else {
+			$order->add_order_note(
+				sprintf(
+					/* translators: %s: reason SendWay gave */
+					__( 'SendWay cannot carry this parcel. %s Call +254 117 390922 to talk it through.', 'sendway' ),
+					! empty( $quote['decline_reason'] ) ? $quote['decline_reason'] : ''
+				)
+			);
+		}
 		$order->save();
 	}
 }

@@ -1,10 +1,7 @@
 <?php
 /**
- * The pickup-town picker at checkout.
- *
- * This is the piece a generic shipping plugin cannot express: a Kenyan buyer
- * does not want a courier guessing their street, they want to name the town
- * they will collect from. Choosing it also drives the rate.
+ * Where the customer gets their parcel: collected in their town, or brought to
+ * the door inside the Nairobi metro. The choice drives the rate.
  *
  * @package SendWay
  */
@@ -13,8 +10,10 @@ defined( 'ABSPATH' ) || exit;
 
 class SendWay_Checkout {
 
-	const FIELD   = 'sendway_town_id';
-	const SESSION = 'sendway_town_id';
+	const FIELD        = 'sendway_town_id';
+	const SESSION      = 'sendway_town_id';
+	const MODE_FIELD   = 'sendway_delivery_mode';
+	const MODE_SESSION = 'sendway_delivery_mode';
 
 	public static function init() {
 		add_action( 'woocommerce_after_checkout_billing_form', array( __CLASS__, 'render_picker' ) );
@@ -37,6 +36,20 @@ class SendWay_Checkout {
 		return null;
 	}
 
+	/** STATION (collect in town) or DOOR (Nairobi metro), from the posted form or the session. */
+	public static function chosen_mode() {
+		if ( ! SendWay_Door::enabled() ) {
+			return 'STATION';
+		}
+		$mode = null;
+		if ( isset( $_POST[ self::MODE_FIELD ] ) ) { // phpcs:ignore WordPress.Security.NonceVerification.Missing
+			$mode = sanitize_text_field( wp_unslash( $_POST[ self::MODE_FIELD ] ) ); // phpcs:ignore WordPress.Security.NonceVerification.Missing
+		} elseif ( function_exists( 'WC' ) && WC()->session ) {
+			$mode = WC()->session->get( self::MODE_SESSION );
+		}
+		return 'DOOR' === $mode ? 'DOOR' : 'STATION';
+	}
+
 	/** The town currently chosen, from the posted form or the session. */
 	public static function chosen_town_id() {
 		if ( isset( $_POST[ self::FIELD ] ) ) { // phpcs:ignore WordPress.Security.NonceVerification.Missing
@@ -55,10 +68,25 @@ class SendWay_Checkout {
 	 */
 	public static function capture_from_review( $post_data ) {
 		parse_str( (string) $post_data, $fields );
-		if ( ! empty( $fields[ self::FIELD ] ) && WC()->session ) {
+		if ( ! WC()->session ) {
+			return;
+		}
+		if ( ! empty( $fields[ self::FIELD ] ) ) {
 			WC()->session->set( self::SESSION, sanitize_text_field( $fields[ self::FIELD ] ) );
 			// The chosen town changes the price, so the cached rate must go.
 			WC()->session->set( 'shipping_for_package_0', null );
+		}
+		if ( ! empty( $fields[ self::MODE_FIELD ] ) ) {
+			$mode = 'DOOR' === $fields[ self::MODE_FIELD ] ? 'DOOR' : 'STATION';
+			if ( WC()->session->get( self::MODE_SESSION ) !== $mode ) {
+				WC()->session->set( self::MODE_SESSION, $mode );
+				WC()->session->set( 'shipping_for_package_0', null );
+			}
+		}
+		$door = SendWay_Door::chosen();
+		if ( $door && isset( $fields['sendway_door_directions'] ) ) {
+			$door['directions'] = mb_substr( sanitize_text_field( $fields['sendway_door_directions'] ), 0, 120 );
+			WC()->session->set( SendWay_Door::SESSION, $door );
 		}
 	}
 
@@ -75,6 +103,8 @@ class SendWay_Checkout {
 
 		$selected_id = self::chosen_town_id();
 		$selected    = $selected_id ? self::town_by_id( $selected_id ) : null;
+		$mode        = self::chosen_mode();
+		$door        = SendWay_Door::chosen();
 
 		echo '<div id="sendway-town-field" class="sendway-field">';
 		echo '<h3>' . esc_html__( 'Where should we deliver?', 'sendway' ) . '</h3>';
@@ -84,15 +114,37 @@ class SendWay_Checkout {
 			esc_attr( self::FIELD ),
 			esc_attr( $selected_id )
 		);
+		printf( '<input type="hidden" name="%1$s" id="%1$s" value="%2$s" />', esc_attr( self::MODE_FIELD ), esc_attr( $mode ) );
+		foreach ( array( 'lat', 'lng', 'address' ) as $key ) {
+			printf(
+				'<input type="hidden" name="sendway_door_%1$s" id="sendway_door_%1$s" value="%2$s" />',
+				esc_attr( $key ),
+				esc_attr( $door ? $door[ $key ] : '' )
+			);
+		}
 
+		if ( SendWay_Door::enabled() ) {
+			echo '<div class="sendway-modes" role="radiogroup">';
+			echo self::mode_card( 'STATION', $mode, __( 'Collect in my town', 'sendway' ), __( 'From a SendWay point near you, with a PIN', 'sendway' ) ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped
+			echo self::mode_card( 'DOOR', $mode, __( 'Deliver to my door', 'sendway' ), __( 'Inside the Nairobi metro', 'sendway' ) ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped
+			echo '</div>';
+		}
+
+		echo '<div id="sendway-station-panel"' . ( 'DOOR' === $mode ? ' hidden' : '' ) . '>';
 		// Unchosen: a dashed call to action. Chosen: the place, plus Change.
 		echo '<div id="sendway-trigger-wrap">';
 		echo self::trigger_html( $selected ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped
 		echo '</div>';
-
 		echo '<p class="sendway-help">'
 			. esc_html__( 'You will collect your parcel from a SendWay agent in this town, using a PIN sent by SMS.', 'sendway' )
 			. '</p>';
+		echo '</div>';
+
+		if ( SendWay_Door::enabled() ) {
+			echo '<div id="sendway-door-wrap"' . ( 'DOOR' === $mode ? '' : ' hidden' ) . '>';
+			echo SendWay_Door::panel_html(); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped
+			echo '</div>';
+		}
 		echo '</div>';
 
 		// The modal lives at the end of the form so checkout's own markup is
@@ -110,11 +162,19 @@ class SendWay_Checkout {
 		</div>';
 	}
 
+	private static function mode_card( $value, $current, $title, $sub ) {
+		$active = $value === $current;
+		return '<button type="button" class="sendway-mode' . ( $active ? ' is-active' : '' ) . '" role="radio" aria-checked="' . ( $active ? 'true' : 'false' ) . '" data-sendway-mode="' . esc_attr( $value ) . '">'
+			. ( 'DOOR' === $value ? SendWay_Door::pin_svg( '#16a34a' ) : SendWay_Door::box_svg() )
+			. '<span class="sendway-trigger__body"><span class="sendway-trigger__title">' . esc_html( $title ) . '</span>'
+			. '<span class="sendway-trigger__sub">' . esc_html( $sub ) . '</span></span></button>';
+	}
+
 	/** Markup for the trigger, re-rendered by JS when the choice changes. */
 	public static function trigger_html( $town ) {
 		if ( empty( $town ) ) {
 			return '<button type="button" class="sendway-trigger sendway-trigger--empty" data-sendway-open>'
-				. '<span class="sendway-trigger__icon">&#128230;</span>'
+				. SendWay_Door::box_svg()
 				. '<span class="sendway-trigger__body">'
 				. '<span class="sendway-trigger__title">' . esc_html__( 'Choose your pickup town', 'sendway' ) . '</span>'
 				. '<span class="sendway-trigger__sub">' . esc_html__( 'We courier to the town and you collect there', 'sendway' ) . '</span>'
@@ -126,7 +186,7 @@ class SendWay_Checkout {
 		$sub = trim( ( isset( $town['sub_county'] ) ? $town['sub_county'] : '' ) . ', ' . ( isset( $town['county'] ) ? $town['county'] : '' ), ', ' );
 
 		return '<div class="sendway-chosen">'
-			. '<span class="sendway-trigger__icon">&#128230;</span>'
+			. SendWay_Door::box_svg()
 			. '<span class="sendway-chosen__body">'
 			. '<span class="sendway-chosen__name">' . esc_html( $town['name'] ) . '</span>'
 			. '<span class="sendway-chosen__sub">' . esc_html( $sub ) . '</span>'
@@ -156,11 +216,16 @@ class SendWay_Checkout {
 				'noResult' => __( 'No pickup towns found', 'sendway' ),
 				'tryAgain' => __( 'Try a different search term', 'sendway' ),
 				'change'   => __( 'Change', 'sendway' ),
+				'boxIcon'  => SendWay_Door::box_svg(),
 			)
 		);
 
-		wp_add_inline_style( 'woocommerce-general', self::css() );
+		wp_add_inline_style( 'woocommerce-general', self::css() . ( SendWay_Door::enabled() ? SendWay_Door::css() : '' ) );
 		wp_add_inline_script( 'wc-checkout', self::js() );
+		if ( SendWay_Door::enabled() ) {
+			wp_localize_script( 'wc-checkout', 'SendWayDoor', SendWay_Door::script_data() );
+			wp_add_inline_script( 'wc-checkout', SendWay_Door::js() );
+		}
 	}
 
 	private static function css() {
@@ -195,6 +260,10 @@ class SendWay_Checkout {
 .sendway-chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px}
 .sendway-chip{font-size:.72em;background:#f1f5f9;color:#475569;padding:2px 8px;border-radius:4px}
 .sendway-empty{text-align:center;padding:40px 0;color:#64748b}
+.sendway-modes{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:12px}
+.sendway-mode{display:flex;align-items:flex-start;gap:10px;padding:12px;border:1px solid #e2e8f0;border-radius:12px;background:#fff;text-align:left;cursor:pointer}
+.sendway-mode.is-active{border-color:#e51015;background:rgba(229,16,21,.04);box-shadow:0 0 0 1px #e51015 inset}
+@media (max-width:480px){.sendway-modes{grid-template-columns:1fr}}
 ';
 	}
 
@@ -217,7 +286,7 @@ jQuery(function ($) {
     $('#sendway-results').html(list.map(function (t) {
       var sub = [t.sub_county, t.county].filter(Boolean).join(', ');
       return '<button type="button" class="sendway-row" data-id="' + esc(t.id) + '">' +
-        '<span class="sendway-trigger__icon">&#128205;</span>' +
+        '<span class="sendway-trigger__icon" aria-hidden="true">&#8226;</span>' +
         '<span style="flex:1 1 auto;min-width:0">' +
           '<span class="sendway-row__name">' + esc(t.name) + '</span>' +
           '<span class="sendway-row__sub">' + esc(sub) + '</span>' +
@@ -245,6 +314,16 @@ jQuery(function ($) {
   }
   function close() { $modal.prop('hidden', true); }
 
+  $(document.body).on('click', '[data-sendway-mode]', function () {
+    var mode = $(this).data('sendway-mode');
+    $('#sendway_delivery_mode').val(mode);
+    $('.sendway-mode').removeClass('is-active').attr('aria-checked', 'false');
+    $(this).addClass('is-active').attr('aria-checked', 'true');
+    $('#sendway-station-panel').prop('hidden', mode === 'DOOR');
+    $('#sendway-door-wrap').prop('hidden', mode !== 'DOOR');
+    $(document.body).trigger('update_checkout');
+  });
+
   $(document.body).on('click', '[data-sendway-open]', open);
   $(document.body).on('click', '[data-sendway-close]', close);
   $(document).on('keydown', function (e) { if (e.key === 'Escape') close(); });
@@ -258,7 +337,7 @@ jQuery(function ($) {
     var sub = [town.sub_county, town.county].filter(Boolean).join(', ');
     $('#sendway-trigger-wrap').html(
       '<div class="sendway-chosen">' +
-        '<span class="sendway-trigger__icon">&#128230;</span>' +
+        (data.boxIcon || '') +
         '<span class="sendway-chosen__body">' +
           '<span class="sendway-chosen__name">' + esc(town.name) + '</span>' +
           '<span class="sendway-chosen__sub">' + esc(sub) + '</span>' +
@@ -293,6 +372,13 @@ JS;
 			return;
 		}
 
+		if ( 'DOOR' === self::chosen_mode() ) {
+			if ( ! SendWay_Door::chosen() ) {
+				wc_add_notice( __( 'Please choose your delivery address from the list so our rider can find you.', 'sendway' ), 'error' );
+			}
+			return;
+		}
+
 		if ( '' === $chosen ) {
 			wc_add_notice( __( 'Please choose the town you will collect your parcel from.', 'sendway' ), 'error' );
 			return;
@@ -303,11 +389,26 @@ JS;
 	}
 
 	public static function persist_to_order( $order, $data ) {
+		if ( 'DOOR' === self::chosen_mode() ) {
+			$door = SendWay_Door::chosen();
+			if ( ! $door ) {
+				return;
+			}
+			$directions = isset( $_POST['sendway_door_directions'] ) ? sanitize_text_field( wp_unslash( $_POST['sendway_door_directions'] ) ) : $door['directions']; // phpcs:ignore WordPress.Security.NonceVerification.Missing
+			$order->update_meta_data( '_sendway_delivery_mode', 'DOOR' );
+			$order->update_meta_data( '_sendway_door_lat', $door['lat'] );
+			$order->update_meta_data( '_sendway_door_lng', $door['lng'] );
+			$order->update_meta_data( '_sendway_door_address', $door['address'] );
+			$order->update_meta_data( '_sendway_door_directions', mb_substr( (string) $directions, 0, 120 ) );
+			return;
+		}
+
 		$chosen = isset( $_POST[ self::FIELD ] ) ? sanitize_text_field( wp_unslash( $_POST[ self::FIELD ] ) ) : ''; // phpcs:ignore WordPress.Security.NonceVerification.Missing
 		if ( '' === $chosen ) {
 			return;
 		}
 		$town = self::town_by_id( $chosen );
+		$order->update_meta_data( '_sendway_delivery_mode', 'STATION' );
 		$order->update_meta_data( '_sendway_town_id', $chosen );
 		if ( $town ) {
 			$order->update_meta_data( '_sendway_town_name', $town['name'] );

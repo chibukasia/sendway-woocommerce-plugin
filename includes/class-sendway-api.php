@@ -163,6 +163,31 @@ class SendWay_API {
 		);
 	}
 
+	public static function create_quote_request( $args ) {
+		return self::request( 'POST', '/quote-requests', $args );
+	}
+
+	public static function quote_request( $id ) {
+		return self::request( 'GET', '/quote-requests/' . rawurlencode( $id ) );
+	}
+
+	public static function accept_quote_request( $id ) {
+		return self::request( 'POST', '/quote-requests/' . rawurlencode( $id ) . '/accept', array( '_idempotency_key' => 'wc-quote-' . $id ) );
+	}
+
+	public static function catalog() {
+		$cached = get_transient( 'sendway_catalog_raw' );
+		if ( is_array( $cached ) && $cached ) {
+			return $cached;
+		}
+		$res = self::request( 'GET', '/catalog' );
+		if ( is_wp_error( $res ) ) {
+			return array();
+		}
+		set_transient( 'sendway_catalog_raw', $res, DAY_IN_SECONDS );
+		return $res;
+	}
+
 	public static function current_run() {
 		return self::request( 'GET', '/pickup-runs/current' );
 	}

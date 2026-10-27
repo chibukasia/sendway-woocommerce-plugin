@@ -1,6 +1,6 @@
 <?php
 /**
- * Per-product SendWay settings: fragile, or a large item such as a fridge.
+ * Per-product SendWay settings: fragile, a large item such as a fridge, or a bulk unit such as a sack.
  *
  * @package SendWay
  */
@@ -11,6 +11,16 @@ class SendWay_Product {
 
 	const FRAGILE    = '_sendway_fragile';
 	const LARGE_ITEM = '_sendway_large_item';
+	const BULK_UNIT  = '_sendway_bulk_unit';
+
+	const FALLBACK_BULK_UNITS = array(
+		'CARTON_S' => array( 'label' => 'Carton, small (up to 10 kg)', 'max_kg' => 10 ),
+		'CARTON_M' => array( 'label' => 'Carton, medium (up to 20 kg)', 'max_kg' => 20 ),
+		'CARTON_L' => array( 'label' => 'Carton, large (up to 30 kg)', 'max_kg' => 30 ),
+		'SACK_S'   => array( 'label' => 'Sack or bale, small (up to 50 kg)', 'max_kg' => 50 ),
+		'SACK_L'   => array( 'label' => 'Sack or bale, large (up to 90 kg)', 'max_kg' => 90 ),
+		'JERRYCAN' => array( 'label' => 'Jerrycan, 20 L', 'max_kg' => 22 ),
+	);
 
 	const CATALOG_TRANSIENT = 'sendway_catalog';
 
@@ -63,6 +73,27 @@ class SendWay_Product {
 		return self::FALLBACK_ITEMS;
 	}
 
+	/** Bulk units SendWay prices, keyed by unit, each with a label and its weight allowance. */
+	public static function bulk_units() {
+		$catalog = SendWay_API::has_key() ? SendWay_API::catalog() : array();
+		if ( ! empty( $catalog['bulk_units'] ) ) {
+			$units = array();
+			foreach ( $catalog['bulk_units'] as $unit ) {
+				$units[ $unit['key'] ] = array(
+					'label'  => $unit['label'],
+					'max_kg' => (float) $unit['max_kg'],
+				);
+			}
+			return $units;
+		}
+		return self::FALLBACK_BULK_UNITS;
+	}
+
+	public static function bulk_min_units() {
+		$catalog = SendWay_API::has_key() ? SendWay_API::catalog() : array();
+		return isset( $catalog['bulk_limits']['min_units'] ) ? max( 1, (int) $catalog['bulk_limits']['min_units'] ) : 2;
+	}
+
 	public static function render_fields() {
 		echo '<div class="options_group">';
 		woocommerce_wp_checkbox(
@@ -81,6 +112,19 @@ class SendWay_Product {
 				'description' => __( 'Fridges, TVs, furniture and mattresses are priced per item rather than by weight.', 'sendway' ),
 			)
 		);
+		$units = array( '' => __( 'Not a bulk unit', 'sendway' ) );
+		foreach ( self::bulk_units() as $key => $unit ) {
+			$units[ $key ] = $unit['label'];
+		}
+		woocommerce_wp_select(
+			array(
+				'id'          => self::BULK_UNIT,
+				'label'       => __( 'SendWay: bulk unit', 'sendway' ),
+				'options'     => $units,
+				'desc_tip'    => true,
+				'description' => __( 'For goods sold by the sack, carton or jerrycan. Orders of two or more units travel as a bulk load, priced per unit with discounts for larger loads.', 'sendway' ),
+			)
+		);
 		echo '</div>';
 	}
 
@@ -90,6 +134,9 @@ class SendWay_Product {
 		$item = isset( $_POST[ self::LARGE_ITEM ] ) ? sanitize_key( wp_unslash( $_POST[ self::LARGE_ITEM ] ) ) : '';
 		// phpcs:enable
 		$product->update_meta_data( self::LARGE_ITEM, array_key_exists( $item, self::large_items() ) ? $item : '' );
+		// phpcs:ignore WordPress.Security.NonceVerification.Missing -- WooCommerce verifies the product form nonce.
+		$unit = isset( $_POST[ self::BULK_UNIT ] ) ? strtoupper( sanitize_text_field( wp_unslash( $_POST[ self::BULK_UNIT ] ) ) ) : '';
+		$product->update_meta_data( self::BULK_UNIT, array_key_exists( $unit, self::bulk_units() ) ? $unit : '' );
 	}
 
 	/** The setting on a variation falls back to its parent product. */

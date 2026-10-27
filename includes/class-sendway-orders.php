@@ -43,10 +43,29 @@ class SendWay_Orders {
 
 		$tracking = $order->get_meta( '_sendway_tracking' );
 		$town     = $order->get_meta( '_sendway_town_name' );
+		$door     = 'DOOR' === $order->get_meta( '_sendway_delivery_mode' ) ? $order->get_meta( '_sendway_door_address' ) : '';
+		$quote    = $order->get_meta( '_sendway_quote_status' );
 
 		if ( ! $tracking ) {
 			echo '<p>' . esc_html__( 'Not booked yet.', 'sendway' ) . '</p>';
-			if ( $town ) {
+			if ( 'PENDING' === $quote ) {
+				echo '<p>' . sprintf(
+					/* translators: %s: quote reference */
+					esc_html__( 'Waiting for a price from SendWay (%s).', 'sendway' ),
+					esc_html( $order->get_meta( '_sendway_quote_reference' ) )
+				) . '</p>';
+			} elseif ( 'QUOTED' === $quote ) {
+				echo '<p><strong>' . sprintf(
+					/* translators: %s: quoted total */
+					esc_html__( 'Quoted: KES %s', 'sendway' ),
+					esc_html( number_format_i18n( (float) $order->get_meta( '_sendway_quote_total' ) ) )
+				) . '</strong><br>' . esc_html__( 'Use Order actions → Accept SendWay quote to book it.', 'sendway' ) . '</p>';
+			} elseif ( in_array( $quote, array( 'DECLINED', 'EXPIRED', 'CANCELLED' ), true ) ) {
+				echo '<p>' . esc_html( sprintf( /* translators: %s: quote status */ __( 'SendWay quote %s.', 'sendway' ), strtolower( $quote ) ) ) . '</p>';
+			}
+			if ( $door ) {
+				echo '<p>' . esc_html__( 'Deliver to', 'sendway' ) . ': ' . esc_html( $door ) . '</p>';
+			} elseif ( $town ) {
 				echo '<p>' . sprintf(
 					/* translators: %s: town name */
 					esc_html__( 'Collection town: %s', 'sendway' ),
@@ -66,7 +85,9 @@ class SendWay_Orders {
 		echo '<p><strong>' . esc_html__( 'Tracking', 'sendway' ) . '</strong><br>';
 		echo '<a href="' . esc_url( self::track_url( $tracking ) ) . '" target="_blank" rel="noopener">' . esc_html( $tracking ) . '</a></p>';
 
-		if ( $town ) {
+		if ( $door ) {
+			echo '<p><strong>' . esc_html__( 'Deliver to', 'sendway' ) . '</strong><br>' . esc_html( $door ) . '</p>';
+		} elseif ( $town ) {
 			echo '<p><strong>' . esc_html__( 'Collect at', 'sendway' ) . '</strong><br>' . esc_html( $town ) . '</p>';
 		}
 
@@ -84,7 +105,7 @@ class SendWay_Orders {
 			'AWAITING_PICKUP'    => __( 'Waiting to be collected from you', 'sendway' ),
 			'IN_TRANSIT'         => __( 'On its way', 'sendway' ),
 			'AT_PICKUP_STATION'  => __( 'Ready for collection', 'sendway' ),
-			'DELIVERED'          => __( 'Collected by the customer', 'sendway' ),
+			'DELIVERED'          => __( 'Delivered to the customer', 'sendway' ),
 			'CANCELLED'          => __( 'Cancelled', 'sendway' ),
 			'RETURNED'           => __( 'Returned', 'sendway' ),
 		);
@@ -96,7 +117,7 @@ class SendWay_Orders {
 		if ( ! $tracking ) {
 			return;
 		}
-		$town = $order->get_meta( '_sendway_town_name' );
+		$town = 'DOOR' === $order->get_meta( '_sendway_delivery_mode' ) ? '' : $order->get_meta( '_sendway_town_name' );
 
 		echo '<section class="sendway-tracking">';
 		echo '<h2>' . esc_html__( 'Delivery', 'sendway' ) . '</h2>';
