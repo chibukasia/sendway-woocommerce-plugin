@@ -70,16 +70,42 @@ class SendWay_Address {
 			wp_send_json_error( array( 'message' => $res->get_error_message() ), 400 );
 		}
 
+		set_transient(
+			self::pick_key( $place_id ),
+			array(
+				'address'     => isset( $res['address'] ) ? (string) $res['address'] : '',
+				'latitude'    => isset( $res['latitude'] ) ? (float) $res['latitude'] : null,
+				'longitude'   => isset( $res['longitude'] ) ? (float) $res['longitude'] : null,
+				'deliverable' => ! empty( $res['deliverable'] ),
+			),
+			HOUR_IN_SECONDS
+		);
+
 		wp_send_json_success( $res );
 	}
 
-	/** Only on the SendWay settings tab. */
+	private static function pick_key( $place_id ) {
+		return 'sendway_pick_' . get_current_user_id() . '_' . md5( $place_id );
+	}
+
+	public static function picked( $place_id ) {
+		$pick = get_transient( self::pick_key( $place_id ) );
+		return is_array( $pick ) && null !== $pick['latitude'] && null !== $pick['longitude'] ? $pick : null;
+	}
+
+	public static function forget( $place_id ) {
+		delete_transient( self::pick_key( $place_id ) );
+	}
+
 	public static function enqueue( $hook ) {
 		if ( 'woocommerce_page_wc-settings' !== $hook ) {
 			return;
 		}
 		// phpcs:ignore WordPress.Security.NonceVerification.Recommended
-		if ( ! isset( $_GET['tab'] ) || 'sendway' !== $_GET['tab'] ) {
+		$tab = isset( $_GET['tab'] ) ? sanitize_key( wp_unslash( $_GET['tab'] ) ) : '';
+		// phpcs:ignore WordPress.Security.NonceVerification.Recommended
+		$section = isset( $_GET['section'] ) ? sanitize_key( wp_unslash( $_GET['section'] ) ) : '';
+		if ( 'shipping' !== $tab || 'sendway' !== $section ) {
 			return;
 		}
 
@@ -93,11 +119,15 @@ class SendWay_Address {
 				'nonce'      => wp_create_nonce( self::NONCE ),
 				'searching'  => __( 'Searching…', 'sendway' ),
 				'noResults'  => __( 'No addresses found. Try adding the town.', 'sendway' ),
-				'outside'    => __( 'We do not collect from this address yet — a rider cannot reach it.', 'sendway' ),
+				'outside'    => __( 'We do not collect from this address yet, because a rider cannot reach it.', 'sendway' ),
+				'confirmed'  => __( 'Location confirmed. Save changes to keep it.', 'sendway' ),
+				'unconfirmed' => __( 'Pick your address from the list to confirm it.', 'sendway' ),
 			)
 		);
 		wp_add_inline_script( 'sendway-address', self::js() );
-		wp_add_inline_style( 'woocommerce_admin_styles', self::css() );
+		wp_register_style( 'sendway-address', false, array(), SENDWAY_VERSION );
+		wp_enqueue_style( 'sendway-address' );
+		wp_add_inline_style( 'sendway-address', self::css() );
 	}
 
 	private static function css() {
@@ -120,13 +150,11 @@ class SendWay_Address {
 		return <<<'JS'
 jQuery(function ($) {
   var cfg = window.SendWayAddress || {};
-  var $lat = $('#sendway_origin_lat');
-  var $lng = $('#sendway_origin_lng');
   var $addr = $('#sendway_origin_address');
+  var $place = $('#sendway_origin_place');
+  var $status = $('#sendway_origin_status');
   if (!$addr.length) return;
 
-  // One token per search, discarded once an address is picked, so Google bills
-  // the keystrokes and the lookup as a single session.
   var token = null;
   function newToken() {
     token = 'sw-' + Math.random().toString(36).slice(2) + Date.now().toString(36);
@@ -137,18 +165,23 @@ jQuery(function ($) {
   $addr.wrap('<span class="sendway-addr"></span>');
   var $wrap = $addr.parent();
   var $list = $('<div class="sendway-addr__list" style="display:none"></div>').appendTo($wrap);
-  var $status = $('<span class="sendway-addr__status"></span>').insertAfter($wrap);
-
-  // The numbers are filled in for them now; keep them visible but read-only so
-  // a wrong value cannot be typed back in.
-  $lat.add($lng).prop('readonly', true);
+  var picked = $addr.val();
 
   function esc(s) { return $('<div>').text(s == null ? '' : s).html(); }
   function hide() { $list.hide().empty(); }
+  function status(text, state) {
+    $status.text(text || '').attr('class', 'description sendway-addr__status' + (state ? ' sendway-addr__status--' + state : ''));
+  }
 
   var timer = null;
   $addr.on('input', function () {
     var q = $(this).val();
+    if (q !== picked) {
+      $place.val('');
+      status(q ? cfg.unconfirmed : '', q ? 'bad' : '');
+    } else if ($status.data('verified')) {
+      status(cfg.confirmed, 'ok');
+    }
     clearTimeout(timer);
     if (!q || q.length < 3) { hide(); return; }
     timer = setTimeout(function () {
@@ -168,7 +201,11 @@ jQuery(function ($) {
             '<span class="sendway-addr__sub">' + esc(r.secondary_text) + '</span>' +
           '</button>';
         }).join('') + '<span class="sendway-addr__credit">' + esc(res.data.attribution) + '</span>');
-      }).fail(hide);
+      }).fail(function (xhr) {
+        var msg = xhr && xhr.responseJSON && xhr.responseJSON.data && xhr.responseJSON.data.message;
+        hide();
+        if (msg) status(msg, 'bad');
+      });
     }, 300);
   });
 
@@ -178,17 +215,22 @@ jQuery(function ($) {
     $.post(cfg.ajaxUrl, {
       action: 'sendway_address_resolve', nonce: cfg.nonce, place_id: pid, session_token: token
     }).done(function (res) {
+      newToken();
       if (!res || !res.success) return;
       var a = res.data;
+      picked = a.address;
       $addr.val(a.address);
-      $lat.val(a.latitude);
-      $lng.val(a.longitude);
-      // Collection has the same service-area gate as delivery, so say now
-      // whether a rider can actually come here.
-      $status
-        .text(a.deliverable ? '' : cfg.outside)
-        .attr('class', 'sendway-addr__status ' + (a.deliverable ? 'sendway-addr__status--ok' : 'sendway-addr__status--bad'));
+      if (a.deliverable) {
+        $place.val(pid);
+        status(cfg.confirmed, 'ok');
+      } else {
+        $place.val('');
+        status(cfg.outside, 'bad');
+      }
+    }).fail(function (xhr) {
       newToken();
+      var msg = xhr && xhr.responseJSON && xhr.responseJSON.data && xhr.responseJSON.data.message;
+      status(msg || cfg.unconfirmed, 'bad');
     });
   });
 

@@ -2,9 +2,9 @@
 Contributors: fecntechnologies
 Tags: woocommerce, shipping, delivery, kenya, courier
 Requires at least: 6.0
-Tested up to: 6.7
+Tested up to: 6.8
 Requires PHP: 7.4
-Stable tag: 1.3.0
+Stable tag: 1.4.0
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -56,9 +56,9 @@ Privacy: https://sendway.co.ke/privacy
 
 1. Install and activate the plugin.
 2. Create a SendWay account at sendway.co.ke, then open **Developers** and create an API key.
-3. In WooCommerce go to **Settings → Shipping → SendWay**, paste the key, and set your collection address.
+3. In WooCommerce go to **Settings → Shipping → SendWay**, paste the key, then search for your collection address and pick it from the list.
 4. Add **SendWay** as a shipping method in the shipping zone covering Kenya.
-5. Copy the webhook URL shown on the settings screen, register it with SendWay, and paste the signing secret back in.
+5. Save. Delivery updates are set up for you when your site is on https and your key has the webhooks:manage permission.
 
 Start with a test key. Switch to a live key once you have placed a practice
 order and are happy with it.
@@ -88,6 +88,16 @@ press of the manual action replays the first result instead of creating another
 parcel.
 
 == Changelog ==
+
+= 1.4.0 =
+* Works with the WooCommerce Checkout block, the default checkout for new stores. Customers choose their pickup town or door address under the shipping address and see the SendWay price straight away.
+* Choosing a pickup town fills in the Town / City and County fields, so customers do not type their town twice.
+* The phone number is required at checkout while SendWay is connected, because the rider and the collection PIN both need it.
+* The collection address search now loads on the settings screen. The address must be picked from the list, and the location is filled in for you instead of being typed.
+* No SendWay rate is shown and nothing is booked until the collection address is confirmed, so prices are never worked out from the wrong place.
+* The pickup phone is checked when you save, and "Book the parcel when an order is" only lists statuses where payment has cleared.
+* The settings screen warns you when SendWay is not in a shipping zone, and is grouped into Connection, Collection point, At checkout, Booking and Delivery updates.
+* Delivery updates are set up automatically when you save, with no webhook URL to copy or secret to paste.
 
 = 1.3.0 =
 * Door delivery in Nairobi. Customers choose "Collect in my town" or "Deliver to my door", search their address, and we check a rider can reach it before showing the rate.

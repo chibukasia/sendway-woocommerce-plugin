@@ -210,6 +210,10 @@ jQuery(function ($) {
       $('#sendway-door-results').prop('hidden', true).empty();
       $('.sendway-door__search').prop('hidden', true);
       $('#sendway-door-chosen, #sendway-door-directions').prop('hidden', false);
+      $(document.body).one('updated_checkout', function () {
+        var $rate = $('input.shipping_method[value^="sendway"]').first();
+        if ($rate.length && !$rate.is(':checked')) $rate.prop('checked', true).trigger('change');
+      });
       $(document.body).trigger('update_checkout');
     }).fail(function (xhr) {
       newToken();

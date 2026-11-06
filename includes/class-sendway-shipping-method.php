@@ -52,7 +52,8 @@ class SendWay_Shipping_Method extends WC_Shipping_Method {
 	 * whatever other methods the shop has — never a broken checkout.
 	 */
 	public function calculate_shipping( $package = array() ) {
-		if ( ! SendWay_API::has_key() ) {
+		$origin = SendWay_API::origin();
+		if ( ! SendWay_API::has_key() || ! $origin ) {
 			return;
 		}
 
@@ -87,8 +88,8 @@ class SendWay_Shipping_Method extends WC_Shipping_Method {
 				$parcel,
 				$destination,
 				array(
-					'origin_lat' => (float) get_option( 'sendway_origin_lat', -1.2864 ),
-					'origin_lng' => (float) get_option( 'sendway_origin_lng', 36.8172 ),
+					'origin_lat' => $origin['lat'],
+					'origin_lng' => $origin['lng'],
 				)
 			)
 		);

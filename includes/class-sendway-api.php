@@ -18,6 +18,22 @@ class SendWay_API {
 	/** A quote depends only on the destination and the cart weight. */
 	const QUOTE_TTL = MINUTE_IN_SECONDS * 15;
 
+	public static function base() {
+		return defined( 'SENDWAY_API_BASE' ) ? rtrim( SENDWAY_API_BASE, '/' ) : self::BASE;
+	}
+
+	public static function origin() {
+		$lat = get_option( 'sendway_origin_lat', '' );
+		$lng = get_option( 'sendway_origin_lng', '' );
+		if ( '' === $lat || '' === $lng || 'yes' !== get_option( 'sendway_origin_verified', 'no' ) ) {
+			return null;
+		}
+		return array(
+			'lat' => (float) $lat,
+			'lng' => (float) $lng,
+		);
+	}
+
 	public static function key() {
 		return trim( (string) get_option( 'sendway_api_key', '' ) );
 	}
@@ -54,7 +70,7 @@ class SendWay_API {
 			),
 		);
 
-		if ( 'POST' === $method ) {
+		if ( 'POST' === $method || 'DELETE' === $method ) {
 			$args['body'] = wp_json_encode( $body );
 			// Booking is the one call worth making replay-safe: a network drop
 			// after the parcel was created must not create a second one.
@@ -65,7 +81,7 @@ class SendWay_API {
 			}
 		}
 
-		$response = wp_remote_request( self::BASE . $path, $args );
+		$response = wp_remote_request( self::base() . $path, $args );
 
 		if ( is_wp_error( $response ) ) {
 			return new WP_Error( 'sendway_unreachable', __( 'Could not reach SendWay. Please try again.', 'sendway' ) );
@@ -186,6 +202,25 @@ class SendWay_API {
 		}
 		set_transient( 'sendway_catalog_raw', $res, DAY_IN_SECONDS );
 		return $res;
+	}
+
+	public static function webhooks() {
+		return self::request( 'GET', '/webhooks' );
+	}
+
+	public static function create_webhook( $url ) {
+		return self::request(
+			'POST',
+			'/webhooks',
+			array(
+				'url'         => $url,
+				'description' => __( 'WooCommerce store', 'sendway' ),
+			)
+		);
+	}
+
+	public static function delete_webhook( $id ) {
+		return self::request( 'DELETE', '/webhooks/' . rawurlencode( $id ) );
 	}
 
 	public static function current_run() {

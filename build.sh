@@ -34,6 +34,7 @@ mkdir -p "$STAGE/includes" "$ROOT/dist"
 
 cp "$ROOT/sendway.php" "$ROOT/readme.txt" "$STAGE/"
 cp "$ROOT"/includes/*.php "$STAGE/includes/"
+cp -R "$ROOT/assets" "$STAGE/assets"
 
 ( cd "$ROOT/.build" && zip -qr "$OUT" "$SLUG" -x '*.DS_Store' )
 rm -rf "$ROOT/.build"

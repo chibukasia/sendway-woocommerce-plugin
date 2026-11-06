@@ -32,6 +32,37 @@ class SendWay_Webhooks {
 		);
 	}
 
+	public static function connect() {
+		$url = rest_url( 'sendway/v1/webhook' );
+		if ( 0 !== strpos( $url, 'https://' ) ) {
+			delete_option( 'sendway_webhook_error' );
+			return false;
+		}
+
+		delete_option( 'sendway_webhook_id' );
+		$existing = SendWay_API::webhooks();
+		if ( is_wp_error( $existing ) ) {
+			update_option( 'sendway_webhook_error', 'insufficient_scope' === $existing->get_error_code() ? 'insufficient_scope' : $existing->get_error_message() );
+			return false;
+		}
+		foreach ( isset( $existing['data'] ) ? $existing['data'] : array() as $endpoint ) {
+			if ( isset( $endpoint['url'], $endpoint['id'] ) && untrailingslashit( $endpoint['url'] ) === untrailingslashit( $url ) ) {
+				SendWay_API::delete_webhook( $endpoint['id'] );
+			}
+		}
+
+		$created = SendWay_API::create_webhook( $url );
+		if ( is_wp_error( $created ) || empty( $created['secret'] ) ) {
+			update_option( 'sendway_webhook_error', is_wp_error( $created ) ? $created->get_error_message() : __( 'SendWay did not return a signing secret.', 'sendway' ) );
+			return false;
+		}
+
+		update_option( 'sendway_webhook_secret', $created['secret'] );
+		update_option( 'sendway_webhook_id', isset( $created['id'] ) ? $created['id'] : '' );
+		delete_option( 'sendway_webhook_error' );
+		return true;
+	}
+
 	public static function handle( WP_REST_Request $request ) {
 		$secret = trim( (string) get_option( 'sendway_webhook_secret', '' ) );
 		if ( '' === $secret ) {

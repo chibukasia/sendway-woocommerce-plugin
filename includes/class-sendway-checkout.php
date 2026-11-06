@@ -27,6 +27,65 @@ class SendWay_Checkout {
 		return SendWay_API::towns();
 	}
 
+	public static function state_code( $county ) {
+		$norm = static function ( $name ) {
+			return preg_replace( '/[^a-z]/', '', str_replace( 'county', '', strtolower( (string) $name ) ) );
+		};
+		$want = $norm( $county );
+		foreach ( (array) WC()->countries->get_states( 'KE' ) as $code => $name ) {
+			if ( $norm( $name ) === $want ) {
+				return $code;
+			}
+		}
+		return '';
+	}
+
+	public static function towns_for_script() {
+		return array_map(
+			static function ( $town ) {
+				$town['state'] = self::state_code( isset( $town['county'] ) ? $town['county'] : '' );
+				return $town;
+			},
+			array_values( self::towns() )
+		);
+	}
+
+	public static function set_mode( $mode ) {
+		$mode = 'DOOR' === $mode && SendWay_Door::enabled() ? 'DOOR' : 'STATION';
+		if ( WC()->session && WC()->session->get( self::MODE_SESSION ) !== $mode ) {
+			WC()->session->set( self::MODE_SESSION, $mode );
+			WC()->session->set( 'shipping_for_package_0', null );
+		}
+		return $mode;
+	}
+
+	public static function set_town( $id ) {
+		$town = self::town_by_id( (string) $id );
+		if ( ! $town || ! WC()->session ) {
+			return null;
+		}
+		WC()->session->set( self::SESSION, $town['id'] );
+		WC()->session->set( 'shipping_for_package_0', null );
+		return $town;
+	}
+
+	public static function set_directions( $text ) {
+		$door = SendWay_Door::chosen();
+		if ( $door ) {
+			$door['directions'] = mb_substr( sanitize_text_field( (string) $text ), 0, 120 );
+			WC()->session->set( SendWay_Door::SESSION, $door );
+		}
+	}
+
+	public static function uses_sendway( $methods ) {
+		foreach ( (array) $methods as $method ) {
+			if ( 0 === strpos( (string) $method, 'sendway' ) ) {
+				return true;
+			}
+		}
+		return false;
+	}
+
 	public static function town_by_id( $id ) {
 		foreach ( self::towns() as $town ) {
 			if ( isset( $town['id'] ) && $town['id'] === $id ) {
@@ -72,21 +131,13 @@ class SendWay_Checkout {
 			return;
 		}
 		if ( ! empty( $fields[ self::FIELD ] ) ) {
-			WC()->session->set( self::SESSION, sanitize_text_field( $fields[ self::FIELD ] ) );
-			// The chosen town changes the price, so the cached rate must go.
-			WC()->session->set( 'shipping_for_package_0', null );
+			self::set_town( sanitize_text_field( $fields[ self::FIELD ] ) );
 		}
 		if ( ! empty( $fields[ self::MODE_FIELD ] ) ) {
-			$mode = 'DOOR' === $fields[ self::MODE_FIELD ] ? 'DOOR' : 'STATION';
-			if ( WC()->session->get( self::MODE_SESSION ) !== $mode ) {
-				WC()->session->set( self::MODE_SESSION, $mode );
-				WC()->session->set( 'shipping_for_package_0', null );
-			}
+			self::set_mode( sanitize_text_field( $fields[ self::MODE_FIELD ] ) );
 		}
-		$door = SendWay_Door::chosen();
-		if ( $door && isset( $fields['sendway_door_directions'] ) ) {
-			$door['directions'] = mb_substr( sanitize_text_field( $fields['sendway_door_directions'] ), 0, 120 );
-			WC()->session->set( SendWay_Door::SESSION, $door );
+		if ( isset( $fields['sendway_door_directions'] ) ) {
+			self::set_directions( $fields['sendway_door_directions'] );
 		}
 	}
 
@@ -97,8 +148,8 @@ class SendWay_Checkout {
 	 */
 	public static function render_picker( $checkout ) {
 		$towns = self::towns();
-		if ( empty( $towns ) ) {
-			return; // Not configured, or SendWay unreachable — stay out of the way.
+		if ( empty( $towns ) || ! SendWay_API::origin() ) {
+			return;
 		}
 
 		$selected_id = self::chosen_town_id();
@@ -201,7 +252,7 @@ class SendWay_Checkout {
 		}
 
 		$towns = self::towns();
-		if ( empty( $towns ) ) {
+		if ( empty( $towns ) || ! SendWay_API::origin() || ( function_exists( 'has_block' ) && has_block( 'woocommerce/checkout' ) ) ) {
 			return;
 		}
 
@@ -212,7 +263,7 @@ class SendWay_Checkout {
 			'wc-checkout',
 			'SendWayTowns',
 			array(
-				'towns'    => array_values( $towns ),
+				'towns'    => self::towns_for_script(),
 				'noResult' => __( 'No pickup towns found', 'sendway' ),
 				'tryAgain' => __( 'Try a different search term', 'sendway' ),
 				'change'   => __( 'Change', 'sendway' ),
@@ -228,7 +279,7 @@ class SendWay_Checkout {
 		}
 	}
 
-	private static function css() {
+	public static function css() {
 		return '
 .sendway-field{margin:1.5em 0}
 .sendway-field h3{margin-bottom:.5em}
@@ -324,6 +375,14 @@ jQuery(function ($) {
     $(document.body).trigger('update_checkout');
   });
 
+  var preferSendway = false;
+  $(document.body).on('updated_checkout', function () {
+    if (!preferSendway) return;
+    preferSendway = false;
+    var $rate = $('input.shipping_method[value^="sendway"]').first();
+    if ($rate.length && !$rate.is(':checked')) $rate.prop('checked', true).trigger('change');
+  });
+
   $(document.body).on('click', '[data-sendway-open]', open);
   $(document.body).on('click', '[data-sendway-close]', close);
   $(document).on('keydown', function (e) { if (e.key === 'Escape') close(); });
@@ -346,7 +405,15 @@ jQuery(function ($) {
       '</div>'
     );
     close();
-    // The chosen town changes the price, so the order review must re-fetch.
+    ['billing', 'shipping'].forEach(function (type) {
+      var $city = $('#' + type + '_city');
+      if ($city.length) $city.val(town.name);
+      var $state = $('#' + type + '_state');
+      if (town.state && $state.length && $state.find('option[value="' + town.state + '"]').length) {
+        $state.val(town.state).trigger('change');
+      }
+    });
+    preferSendway = true;
     $(document.body).trigger('update_checkout');
   });
 });
@@ -359,17 +426,14 @@ JS;
 		}
 		$chosen = isset( $_POST[ self::FIELD ] ) ? sanitize_text_field( wp_unslash( $_POST[ self::FIELD ] ) ) : ''; // phpcs:ignore WordPress.Security.NonceVerification.Missing
 
-		// Only required when the customer actually picked SendWay shipping.
-		$methods = (array) WC()->session->get( 'chosen_shipping_methods', array() );
-		$uses_sendway = false;
-		foreach ( $methods as $method ) {
-			if ( 0 === strpos( (string) $method, 'sendway' ) ) {
-				$uses_sendway = true;
-				break;
-			}
-		}
-		if ( ! $uses_sendway ) {
+		if ( ! self::uses_sendway( WC()->session->get( 'chosen_shipping_methods', array() ) ) ) {
 			return;
+		}
+
+		$billing  = isset( $_POST['billing_phone'] ) ? sanitize_text_field( wp_unslash( $_POST['billing_phone'] ) ) : ''; // phpcs:ignore WordPress.Security.NonceVerification.Missing
+		$shipping = isset( $_POST['shipping_phone'] ) ? sanitize_text_field( wp_unslash( $_POST['shipping_phone'] ) ) : ''; // phpcs:ignore WordPress.Security.NonceVerification.Missing
+		if ( '' === trim( $billing . $shipping ) ) {
+			wc_add_notice( __( 'Please add a phone number. Our rider calls it on delivery, and your collection PIN is sent to it by SMS.', 'sendway' ), 'error' );
 		}
 
 		if ( 'DOOR' === self::chosen_mode() ) {
