@@ -148,7 +148,7 @@ class SendWay_Checkout {
 	 */
 	public static function render_picker( $checkout ) {
 		$towns = self::towns();
-		if ( empty( $towns ) || ! SendWay_API::origin() ) {
+		if ( empty( $towns ) || ! SendWay_API::first_mile() ) {
 			return;
 		}
 
@@ -252,7 +252,7 @@ class SendWay_Checkout {
 		}
 
 		$towns = self::towns();
-		if ( empty( $towns ) || ! SendWay_API::origin() || ( function_exists( 'has_block' ) && has_block( 'woocommerce/checkout' ) ) ) {
+		if ( empty( $towns ) || ! SendWay_API::first_mile() || ( function_exists( 'has_block' ) && has_block( 'woocommerce/checkout' ) ) ) {
 			return;
 		}
 

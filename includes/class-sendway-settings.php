@@ -47,6 +47,48 @@ class SendWay_Settings {
 		}
 		self::notices();
 		WC_Admin_Settings::output_fields( self::fields() );
+		self::toggle_script();
+	}
+
+	private static function toggle_script() {
+		?>
+		<script>
+		jQuery( function ( $ ) {
+			var $mode = $( '#sendway_first_mile' );
+			var collect = [ '#sendway_origin_address', '#sendway_origin_directions' ];
+			function sync() {
+				var drop = 'dropoff' === $mode.val();
+				$( '#sendway_dropoff_station' ).closest( 'tr' ).toggle( drop );
+				$.each( collect, function ( _, id ) {
+					$( id ).closest( 'tr' ).toggle( ! drop );
+				} );
+			}
+			$mode.on( 'change', sync );
+			sync();
+		} );
+		</script>
+		<?php
+	}
+
+	private static function point_options() {
+		$options = array();
+		foreach ( SendWay_API::dropoff_points() as $point ) {
+			if ( empty( $point['id'] ) || empty( $point['name'] ) ) {
+				continue;
+			}
+			$where = ! empty( $point['address'] ) ? $point['address'] : ( isset( $point['town'] ) ? $point['town'] : '' );
+			$label = $point['name'] . ( '' !== $where ? ' · ' . $where : '' );
+			if ( ! empty( $point['is_official'] ) ) {
+				$label .= ' ' . __( '(SendWay office)', 'sendway' );
+			}
+			$options[ $point['id'] ] = $label;
+		}
+		if ( empty( $options ) ) {
+			$options[''] = SendWay_API::has_key()
+				? __( 'No drop-off points are open right now', 'sendway' )
+				: __( 'Add your API key first', 'sendway' );
+		}
+		return $options;
 	}
 
 	private static function notice( $type, $html ) {
@@ -80,7 +122,9 @@ class SendWay_Settings {
 			)
 		);
 
-		if ( ! SendWay_API::origin() ) {
+		if ( SendWay_API::drops_off() && ! SendWay_API::first_mile() ) {
+			self::notice( 'error', esc_html__( 'Choose the SendWay point where you will drop your parcels. No SendWay rate is shown at checkout until it is set.', 'sendway' ) );
+		} elseif ( ! SendWay_API::first_mile() ) {
 			self::notice( 'error', esc_html__( 'Set your collection address below. SendWay prices every delivery from it and sends the rider there, so no SendWay rate is shown at checkout until it is set.', 'sendway' ) );
 		}
 
@@ -147,8 +191,27 @@ class SendWay_Settings {
 			array(
 				'title' => __( 'Collection point', 'sendway' ),
 				'type'  => 'title',
-				'desc'  => __( 'Where our rider collects your parcels. Prices are worked out from here.', 'sendway' ),
+				'desc'  => __( 'How your parcels reach SendWay. Prices are worked out from here.', 'sendway' ),
 				'id'    => 'sendway_collection',
+			),
+			array(
+				'title'    => __( 'How parcels reach us', 'sendway' ),
+				'id'       => 'sendway_first_mile',
+				'type'     => 'select',
+				'default'  => 'collect',
+				'options'  => array(
+					'collect' => __( 'A SendWay rider collects from my shop', 'sendway' ),
+					'dropoff' => __( 'I drop parcels at a SendWay point in Nairobi', 'sendway' ),
+				),
+				'desc_tip' => __( 'Bring each booked parcel to the point you choose below instead of waiting for a rider.', 'sendway' ),
+			),
+			array(
+				'title'    => __( 'Drop-off point', 'sendway' ),
+				'id'       => 'sendway_dropoff_station',
+				'type'     => 'select',
+				'options'  => self::point_options(),
+				'desc_tip' => __( 'Our own office is listed first. The list refreshes every few hours.', 'sendway' ),
+				'css'      => 'min-width:400px',
 			),
 			array(
 				'title'    => __( 'Collection address', 'sendway' ),
@@ -341,6 +404,7 @@ class SendWay_Settings {
 		WC_Admin_Settings::save_fields( self::fields() );
 
 		self::save_location( $previous['address'] );
+		self::save_first_mile();
 
 		$phone = trim( (string) get_option( 'sendway_sender_phone', '' ) );
 		if ( '' !== $phone ) {
@@ -372,6 +436,25 @@ class SendWay_Settings {
 
 		if ( SendWay_API::has_key() && '' === trim( (string) get_option( 'sendway_webhook_secret', '' ) ) ) {
 			SendWay_Webhooks::connect();
+		}
+	}
+
+	private static function save_first_mile() {
+		if ( ! in_array( get_option( 'sendway_first_mile', 'collect' ), array( 'collect', 'dropoff' ), true ) ) {
+			update_option( 'sendway_first_mile', 'collect' );
+		}
+		if ( ! SendWay_API::drops_off() ) {
+			return;
+		}
+		$points  = SendWay_API::dropoff_points();
+		$ids     = wp_list_pluck( $points, 'id' );
+		$current = (string) get_option( 'sendway_dropoff_station', '' );
+		if ( in_array( $current, $ids, true ) ) {
+			return;
+		}
+		update_option( 'sendway_dropoff_station', $ids ? (string) $ids[0] : '' );
+		if ( '' !== $current ) {
+			WC_Admin_Settings::add_error( __( 'That drop-off point is no longer open, so we picked the first one on the list. Check it is the one you want.', 'sendway' ) );
 		}
 	}
 

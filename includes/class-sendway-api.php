@@ -13,6 +13,7 @@ class SendWay_API {
 
 	/** Towns change rarely and are needed on every checkout render. */
 	const TOWNS_TRANSIENT = 'sendway_towns';
+	const POINTS_TRANSIENT = 'sendway_dropoff_points';
 	const TOWNS_TTL       = HOUR_IN_SECONDS * 6;
 
 	/** A quote depends only on the destination and the cart weight. */
@@ -32,6 +33,38 @@ class SendWay_API {
 			'lat' => (float) $lat,
 			'lng' => (float) $lng,
 		);
+	}
+
+	public static function drops_off() {
+		return 'dropoff' === get_option( 'sendway_first_mile', 'collect' );
+	}
+
+	public static function first_mile() {
+		if ( self::drops_off() ) {
+			$station = trim( (string) get_option( 'sendway_dropoff_station', '' ) );
+			return '' === $station ? null : array(
+				'pickup_mode'       => 'DROP_AT_STATION',
+				'origin_station_id' => $station,
+			);
+		}
+		$origin = self::origin();
+		return $origin ? array(
+			'origin_lat' => $origin['lat'],
+			'origin_lng' => $origin['lng'],
+		) : null;
+	}
+
+	public static function dropoff_points() {
+		$cached = get_transient( self::POINTS_TRANSIENT );
+		if ( false !== $cached ) {
+			return $cached;
+		}
+		$res = self::request( 'GET', '/stations?purpose=dropoff' );
+		if ( is_wp_error( $res ) || ! isset( $res['data'] ) || ! is_array( $res['data'] ) ) {
+			return array();
+		}
+		set_transient( self::POINTS_TRANSIENT, $res['data'], self::TOWNS_TTL );
+		return $res['data'];
 	}
 
 	public static function key() {
@@ -122,6 +155,7 @@ class SendWay_API {
 
 	public static function clear_towns_cache() {
 		delete_transient( self::TOWNS_TRANSIENT );
+		delete_transient( self::POINTS_TRANSIENT );
 	}
 
 	/**

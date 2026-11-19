@@ -93,17 +93,14 @@ class SendWay_Booking {
 	}
 
 	private static function payload( $order, $parcel, $destination ) {
-		$origin  = SendWay_API::origin();
 		$payload = array_merge(
 			$parcel,
 			$destination,
+			SendWay_API::first_mile(),
 			array(
 				'recipient_name'  => trim( $order->get_shipping_first_name() . ' ' . $order->get_shipping_last_name() ) ?: $order->get_formatted_billing_full_name(),
 				'recipient_phone' => $order->get_billing_phone() ?: $order->get_shipping_phone(),
 				'description'     => self::describe( $order ),
-				'origin_address'  => get_option( 'sendway_origin_address', '' ),
-				'origin_lat'      => $origin['lat'],
-				'origin_lng'      => $origin['lng'],
 				'reference'       => 'wc-' . $order->get_id(),
 			)
 		);
@@ -125,7 +122,10 @@ class SendWay_Booking {
 			$payload['cod_amount'] = min( self::MAX_COD, round( (float) $order->get_total(), 2 ) );
 		}
 
-		$directions = trim( (string) get_option( 'sendway_origin_directions', '' ) );
+		if ( ! SendWay_API::drops_off() ) {
+			$payload['origin_address'] = get_option( 'sendway_origin_address', '' );
+		}
+		$directions = SendWay_API::drops_off() ? '' : trim( (string) get_option( 'sendway_origin_directions', '' ) );
 		if ( '' !== $directions ) {
 			$payload['origin_directions'] = mb_substr( $directions, 0, 120 );
 		}
@@ -147,8 +147,12 @@ class SendWay_Booking {
 		if ( ! SendWay_API::has_key() ) {
 			return;
 		}
-		if ( ! SendWay_API::origin() ) {
-			$order->add_order_note( __( 'SendWay did not book this order because your collection address is not set. Pick it in WooCommerce → Settings → Shipping → SendWay, then use "Send with SendWay" from Order actions.', 'sendway' ) );
+		if ( ! SendWay_API::first_mile() ) {
+			$order->add_order_note(
+				SendWay_API::drops_off()
+					? __( 'SendWay did not book this order because no drop-off point is chosen. Pick one in WooCommerce → Settings → Shipping → SendWay, then use "Send with SendWay" from Order actions.', 'sendway' )
+					: __( 'SendWay did not book this order because your collection address is not set. Pick it in WooCommerce → Settings → Shipping → SendWay, then use "Send with SendWay" from Order actions.', 'sendway' )
+			);
 			$order->save();
 			return;
 		}

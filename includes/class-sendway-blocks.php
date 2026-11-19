@@ -19,7 +19,7 @@ class SendWay_Blocks {
 	}
 
 	public static function ready() {
-		return SendWay_API::has_key() && SendWay_API::origin() && ! empty( SendWay_Checkout::towns() );
+		return SendWay_API::has_key() && SendWay_API::first_mile() && ! empty( SendWay_Checkout::towns() );
 	}
 
 	public static function data_attributes( $namespaces ) {

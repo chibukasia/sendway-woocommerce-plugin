@@ -3,7 +3,7 @@
  * Plugin Name:       SendWay for WooCommerce
  * Plugin URI:        https://sendway.co.ke
  * Description:       Live SendWay delivery rates at checkout, a pickup-town picker for your customers, automatic parcel booking, and tracking on the order — for shops delivering out of Nairobi.
- * Version:           1.4.0
+ * Version:           1.5.0
  * Requires at least: 6.0
  * Requires PHP:      7.4
  * Author:            Fecn Technologies Ltd
@@ -22,7 +22,7 @@
 
 defined( 'ABSPATH' ) || exit;
 
-define( 'SENDWAY_VERSION', '1.4.0' );
+define( 'SENDWAY_VERSION', '1.5.0' );
 define( 'SENDWAY_PATH', plugin_dir_path( __FILE__ ) );
 define( 'SENDWAY_URL', plugin_dir_url( __FILE__ ) );
 

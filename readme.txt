@@ -4,7 +4,7 @@ Tags: woocommerce, shipping, delivery, kenya, courier
 Requires at least: 6.0
 Tested up to: 6.8
 Requires PHP: 7.4
-Stable tag: 1.4.0
+Stable tag: 1.5.0
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -88,6 +88,9 @@ press of the manual action replays the first result instead of creating another
 parcel.
 
 == Changelog ==
+
+= 1.5.0 =
+* You can now drop parcels at a SendWay point in Nairobi instead of waiting for a rider. Choose "I drop parcels at a SendWay point" under Collection point and pick the point. Our own office is listed first.
 
 = 1.4.0 =
 * Works with the WooCommerce Checkout block, the default checkout for new stores. Customers choose their pickup town or door address under the shipping address and see the SendWay price straight away.
